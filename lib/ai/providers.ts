@@ -1,14 +1,18 @@
-import { customProvider, gateway } from "ai";
+import { google } from "@ai-sdk/google";
+import { customProvider } from "ai";
 import { isTestEnvironment } from "../constants";
 import { titleModel } from "./models";
 
 export const myProvider = isTestEnvironment
   ? (() => {
-      const { chatModel, titleModel } = require("./models.mock");
+      const {
+        chatModel,
+        titleModel: mockTitleModel,
+      } = require("./models.mock");
       return customProvider({
         languageModels: {
           "chat-model": chatModel,
-          "title-model": titleModel,
+          "title-model": mockTitleModel,
         },
       });
     })()
@@ -19,12 +23,12 @@ export function getLanguageModel(modelId: string) {
     return myProvider.languageModel(modelId);
   }
 
-  return gateway.languageModel(modelId);
+  return google(modelId);
 }
 
 export function getTitleModel() {
   if (isTestEnvironment && myProvider) {
     return myProvider.languageModel("title-model");
   }
-  return gateway.languageModel(titleModel.id);
+  return google(titleModel.id);
 }
