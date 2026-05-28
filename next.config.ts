@@ -43,6 +43,7 @@ const nextConfig: NextConfig = {
     ],
   },
   experimental: {
+    proxyClientMaxBodySize: "20mb",
     prefetchInlining: true,
     cachedNavigations: true,
     appNewScrollHandler: true,

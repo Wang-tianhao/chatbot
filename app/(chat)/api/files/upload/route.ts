@@ -7,12 +7,16 @@ import { auth } from "@/app/(auth)/auth";
 const FileSchema = z.object({
   file: z
     .instanceof(Blob)
-    .refine((file) => file.size <= 5 * 1024 * 1024, {
-      message: "File size should be less than 5MB",
+    .refine((file) => file.size <= 20 * 1024 * 1024, {
+      message: "File size should be less than 20MB",
     })
-    .refine((file) => ["image/jpeg", "image/png"].includes(file.type), {
-      message: "File type should be JPEG or PNG",
-    }),
+    .refine(
+      (file) =>
+        ["image/jpeg", "image/png", "application/pdf"].includes(file.type),
+      {
+        message: "File type should be JPEG, PNG, or PDF",
+      }
+    ),
 });
 
 export async function POST(request: Request) {
@@ -54,10 +58,12 @@ export async function POST(request: Request) {
       });
 
       return NextResponse.json(data);
-    } catch (_error) {
+    } catch (error) {
+      console.error("Blob upload failed:", error);
       return NextResponse.json({ error: "Upload failed" }, { status: 500 });
     }
-  } catch (_error) {
+  } catch (error) {
+    console.error("Upload route failed to process request:", error);
     return NextResponse.json(
       { error: "Failed to process request" },
       { status: 500 }
