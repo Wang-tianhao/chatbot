@@ -1,3 +1,4 @@
+import { google } from "@ai-sdk/google";
 import { geolocation, ipAddress } from "@vercel/functions";
 import {
   convertToModelMessages,
@@ -6,6 +7,7 @@ import {
   generateId,
   stepCountIs,
   streamText,
+  type ToolSet,
 } from "ai";
 import { checkBotId } from "botid/server";
 import { after } from "next/server";
@@ -39,7 +41,7 @@ import {
 import type { DBMessage } from "@/lib/db/schema";
 import { ChatbotError } from "@/lib/errors";
 import { checkIpRateLimit } from "@/lib/ratelimit";
-import type { ChatMessage } from "@/lib/types";
+import type { ChatMessage, GroundingSource } from "@/lib/types";
 import { convertToUIMessages, generateUUID } from "@/lib/utils";
 import { generateTitleFromUserMessage } from "../../actions";
 import { type PostRequestBody, postRequestBodySchema } from "./schema";
@@ -55,6 +57,68 @@ function getStreamContext() {
 }
 
 export { getStreamContext };
+
+type GroundingChunk = { web?: { uri?: string; title?: string } };
+type GroundingSupport = {
+  segment?: { text?: string } | null;
+  segment_text?: string | null;
+  groundingChunkIndices?: number[] | null;
+};
+type GroundingMetadata = {
+  groundingChunks?: GroundingChunk[] | null;
+  groundingSupports?: GroundingSupport[] | null;
+};
+
+/**
+ * Builds an enriched citation list from Gemini grounding metadata. Each web
+ * chunk contributes a source whose `snippet` is the answer text it grounded
+ * (from `groundingSupports`), giving the UI a real summary rather than just a
+ * redirect URL. Sources are deduped by URL across all steps.
+ */
+function extractGroundingSources(
+  steps: ReadonlyArray<{ providerMetadata?: Record<string, unknown> }>
+): GroundingSource[] {
+  const byUrl = new Map<string, GroundingSource>();
+
+  for (const step of steps) {
+    const google = step.providerMetadata?.google as
+      | { groundingMetadata?: GroundingMetadata | null }
+      | undefined;
+    const metadata = google?.groundingMetadata;
+    const chunks = metadata?.groundingChunks ?? [];
+    const supports = metadata?.groundingSupports ?? [];
+
+    chunks.forEach((chunk, index) => {
+      const url = chunk.web?.uri;
+      if (!url) {
+        return;
+      }
+
+      const snippet = supports
+        .filter((support) => support.groundingChunkIndices?.includes(index))
+        .map((support) => support.segment?.text ?? support.segment_text ?? "")
+        .map((text) => text.trim())
+        .filter(Boolean)
+        .join(" … ");
+
+      const existing = byUrl.get(url);
+      if (existing) {
+        // Merge snippets when the same source grounds multiple segments.
+        existing.snippet = [existing.snippet, snippet]
+          .filter(Boolean)
+          .join(" … ");
+      } else {
+        byUrl.set(url, {
+          url,
+          title: chunk.web?.title ?? "",
+          snippet,
+        });
+      }
+    });
+  }
+
+  return Array.from(byUrl.values());
+}
 
 export async function POST(request: Request) {
   let requestBody: PostRequestBody;
@@ -203,6 +267,8 @@ export async function POST(request: Request) {
                   "editDocument",
                   "updateDocument",
                   "requestSuggestions",
+                  "google_search",
+                  "url_context",
                 ],
           providerOptions: {
             google: {
@@ -230,6 +296,16 @@ export async function POST(request: Request) {
               dataStream,
               modelId: chatModel,
             }),
+            // Gemini native grounding (provider-executed). Tool keys MUST be
+            // exactly "google_search" and "url_context" per @ai-sdk/google.
+            // Cast bridges a cross-package zod schema brand mismatch (the
+            // provider builds schemas with zod/v4); these are runtime-valid.
+            google_search: google.tools.googleSearch(
+              {}
+            ) as unknown as ToolSet[string],
+            url_context: google.tools.urlContext(
+              {}
+            ) as unknown as ToolSet[string],
           },
           experimental_telemetry: {
             isEnabled: isProductionEnvironment,
@@ -249,6 +325,20 @@ export async function POST(request: Request) {
           } catch (_) {
             /* non-fatal */
           }
+        }
+
+        // Surface Gemini grounding citations as an enriched, persisted source
+        // list. The bare `source-url` parts only carry a redirect URL + domain;
+        // the real per-source summary lives in groundingSupports segments, so we
+        // build {title, url, snippet} from the step's grounding metadata.
+        try {
+          const steps = await result.steps;
+          const groundingSources = extractGroundingSources(steps);
+          if (groundingSources.length > 0) {
+            dataStream.write({ type: "data-sources", data: groundingSources });
+          }
+        } catch (_) {
+          /* non-fatal */
         }
       },
       generateId: generateUUID,

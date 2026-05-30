@@ -27,6 +27,12 @@ export type ChatTools = {
   requestSuggestions: requestSuggestionsTool;
 };
 
+export type GroundingSource = {
+  url: string;
+  title: string;
+  snippet: string;
+};
+
 export type CustomUIDataTypes = {
   textDelta: string;
   imageDelta: string;
@@ -40,6 +46,7 @@ export type CustomUIDataTypes = {
   clear: null;
   finish: null;
   "chat-title": string;
+  sources: GroundingSource[];
 };
 
 export type ChatMessage = UIMessage<
