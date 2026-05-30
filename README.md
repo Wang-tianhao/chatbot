@@ -25,6 +25,7 @@
   - Unified API for generating text, structured objects, and tool calls with LLMs
   - Hooks for building dynamic chat and generative user interfaces
   - Supports OpenAI, Anthropic, Google, xAI, and other model providers via AI Gateway
+  - Live **web search** and **URL reading** via Gemini native grounding (`google_search` + `url_context`), with inline source citations — uses the existing `GOOGLE_GENERATIVE_AI_API_KEY`, no extra key required
 - [shadcn/ui](https://ui.shadcn.com)
   - Styling with [Tailwind CSS](https://tailwindcss.com)
   - Component primitives from [Radix UI](https://radix-ui.com) for accessibility and flexibility

@@ -18,6 +18,7 @@ import { DocumentPreview } from "./document-preview";
 import { SparklesIcon } from "./icons";
 import { MessageActions } from "./message-actions";
 import { MessageReasoning } from "./message-reasoning";
+import { MessageSources } from "./message-sources";
 import { PreviewAttachment } from "./preview-attachment";
 import { Weather } from "./weather";
 
@@ -304,6 +305,11 @@ const PurePreviewMessage = ({
     return null;
   });
 
+  // Enriched grounding citations are streamed as a `data-sources` part by the
+  // chat route (built from Gemini grounding metadata). Use the latest one.
+  const sources =
+    message.parts?.findLast((part) => part.type === "data-sources")?.data ?? [];
+
   const actions = !isReadonly && (
     <MessageActions
       chatId={chatId}
@@ -325,6 +331,7 @@ const PurePreviewMessage = ({
     <>
       {attachments}
       {parts}
+      <MessageSources sources={sources} />
       {actions}
     </>
   );
